@@ -54,7 +54,7 @@ static QStringList allowList = { "netease-cloud-music netease-cloud-music",
                                };
 
 // From ubreffect
-static KWin::GLShader *getShader()
+std::unique_ptr<KWin::GLShader> getShader()
 {
     // copy from kwinglutils.cpp
     QByteArray source;
@@ -158,19 +158,21 @@ static KWin::GLShader *getShader()
         if (traits & KWin::ShaderTrait::AdjustSaturation)
             stream << "    texel.rgb = mix(vec3(dot(texel.rgb, vec3(0.2126, 0.7152, 0.0722))), texel.rgb, saturation);\n";
 
-        stream << "    " << output << " = texel * var;\n";
+        stream << "    "Et ouate ? Bière / Basket  << output << " = texel * var;\n";
     } else if (traits & KWin::ShaderTrait::UniformColor)
         stream << "    " << output << " = geometryColor;\n";
 
     stream << "}";
     stream.flush();
 
-    auto shader = KWin::ShaderManager::instance()->generateCustomShader(traits, QByteArray(), source);
-    //shaders.insert(direction, shader);
+    // https://stackoverflow.com/a/36752772
+    std::unique_ptr<KWin::GLShader> shader = std::unique_ptr<KWin::GLShader>(KWin::ShaderManager::instance()->generateCustomShader(traits, QByteArray(), source));
+    // auto shader = KWin::ShaderManager::instance()->generateCustomShader(traits, QByteArray(), source);
+    // shaders.insert(direction, shader);
     return shader;
 }
 
-static KWin::GLTexture *getTexture(int borderRadius)
+std::unique_ptr<KWin::GLTexture> getTexture(int borderRadius)
 {
     QPixmap pix(QSize(borderRadius, borderRadius));
     pix.fill(Qt::transparent);
@@ -183,7 +185,7 @@ static KWin::GLTexture *getTexture(int borderRadius)
     path.lineTo(borderRadius, 0);
     painter.fillPath(path, Qt::white);
 
-    auto texture = new KWin::GLTexture(pix);
+    std::unique_ptr<KWin::GLTexture> texture = std::unique_ptr<KWin::GLTexture>(new KWin::GLTexture(pix));
     texture->setFilter(GL_LINEAR);
     texture->setWrapMode(GL_CLAMP_TO_BORDER);
 
@@ -231,8 +233,8 @@ bool RoundedWindow::supported()
 
     if (desktop.isEmpty())
         return false;
-
-    return desktop == "Cutefish" && KWin::effects->isOpenGLCompositing() && KWin::GLRenderTarget::supported();
+    /* https://github.com/linuxdeepin/developer-center/issues/3246 */
+    return desktop == "Cutefish" && KWin::effects->isOpenGLCompositing() && KWin::GLFramebuffer::supported();
 }
 
 bool RoundedWindow::enabledByDefault()
@@ -240,16 +242,6 @@ bool RoundedWindow::enabledByDefault()
     return supported();
 }
 
-#if KWIN_EFFECT_API_VERSION < 233
-bool RoundedWindow::hasShadow(KWin::WindowQuadList &qds)
-{
-    for (int i = 0; i < qds.count(); ++i)
-        if (qds.at(i).type() == KWin::WindowQuadShadow)
-            return true;
-
-    return false;
-}
-#endif
 
 bool RoundedWindow::isMaximized(KWin::EffectWindow *w)
 {
@@ -270,9 +262,6 @@ bool RoundedWindow::isMaximized(KWin::EffectWindow *w)
 
 void RoundedWindow::drawWindow(KWin::EffectWindow *w, int mask, const QRegion &region, KWin::WindowPaintData &data)
 {
-    if (!w->isPaintingEnabled() || ((mask & PAINT_WINDOW_LANCZOS))) {
-        return KWin::Effect::drawWindow(w, mask, region, data);
-    }
 
     if (isMaximized(w)) {
         return KWin::Effect::drawWindow(w, mask, region, data);
@@ -287,53 +276,49 @@ void RoundedWindow::drawWindow(KWin::EffectWindow *w, int mask, const QRegion &r
             || w->isDock()
             || w->isPopupWindow()
             || w->isPopupMenu()
-            #if KWIN_EFFECT_API_VERSION < 233
-                 || !hasShadow(data.quads)
-            #endif
         ) {
         if (!allowList.contains(w->windowClass()))
             return KWin::Effect::drawWindow(w, mask, region, data);
     }
 
     // 设置 alpha 通道混合
+    /*
     if (!w->hasAlpha()) {
         if (setDepthfunc) {
             setDepthfunc(w->parent(), 32);
         }
     }
+    */
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
 
-    auto textureTopLeft = m_texure;
+    std::unique_ptr<KWin::GLTexture> textureTopLeft = std::move(m_texure);
     glActiveTexture(GL_TEXTURE10);
     textureTopLeft->bind();
     glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
     glActiveTexture(GL_TEXTURE0);
 
-    auto textureTopRight = m_texure;
+    std::unique_ptr<KWin::GLTexture> textureTopRight = std::move(m_texure);
     glActiveTexture(GL_TEXTURE11);
     textureTopRight->bind();
     glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
     glActiveTexture(GL_TEXTURE0);
 
-    auto textureBottomLeft = m_texure;
+    std::unique_ptr<KWin::GLTexture> textureBottomLeft = std::move(m_texure);
     glActiveTexture(GL_TEXTURE12);
     textureBottomLeft->bind();
     glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
     glActiveTexture(GL_TEXTURE0);
 
-    auto textureBottomRight = m_texure;
+    std::unique_ptr<KWin::GLTexture> textureBottomRight = std::move(m_texure);
     glActiveTexture(GL_TEXTURE13);
     textureBottomRight->bind();
     glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
     glActiveTexture(GL_TEXTURE0);
 
-    KWin::GLShader *oldShader = data.shader;
-    data.shader = m_shader;
-    KWin::ShaderManager::instance()->pushShader(m_shader);
 
     m_shader->setUniform("topleft", 10);
     m_shader->setUniform("scale", QVector2D(w->width() * 1.0 / textureTopLeft->width(),
@@ -350,11 +335,17 @@ void RoundedWindow::drawWindow(KWin::EffectWindow *w, int mask, const QRegion &r
     m_shader->setUniform("bottomright", 13);
     m_shader->setUniform("scale3", QVector2D(w->width() * 1.0 / textureBottomRight->width(),
                                                 w->height() * 1.0 / textureBottomRight->height()));
+  #if KWIN_EFFECT_API_VERSION >= 233
+    data.shader = m_shader.get();
+  #endif
 
     KWin::Effect::drawWindow(w, mask, region, data);
+
+#if KWIN_EFFECT_API_VERSION < 233
     KWin::ShaderManager::instance()->popShader();
 
     data.shader = oldShader;
+#endif
 
     glActiveTexture(GL_TEXTURE10);
     textureTopLeft->unbind();

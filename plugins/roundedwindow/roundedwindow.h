@@ -33,7 +33,8 @@ class RoundedWindow : public KWin::Effect
 
 public:
     enum DataRole {
-        BaseRole = KWin::DataRole::LanczosCacheRole + 100,
+        /* https://techbase.kde.org/Development/Tutorials/KWin/Effects/JS_API#KWin::EffectWindow */
+        BaseRole = KWin::DataRole::WindowForceBlurRole + 100,
         WindowRadiusRole = BaseRole + 1,
         WindowClipPathRole = BaseRole + 2,
         WindowMaskTextureRole = BaseRole + 3,
@@ -46,14 +47,14 @@ public:
     static bool supported();
     static bool enabledByDefault();
 
-    bool hasShadow(KWin::WindowQuadList &qds);
     bool isMaximized(KWin::EffectWindow *w);
 
     void drawWindow(KWin::EffectWindow* w, int mask, const QRegion &region, KWin::WindowPaintData& data) override;
 
 private:
-    KWin::GLShader *m_shader;
-    KWin::GLTexture *m_texure;
+
+    std::unique_ptr<KWin::GLShader> m_shader;
+    std::unique_ptr<KWin::GLTexture> m_texure;
 
     xcb_atom_t m_netWMStateAtom = 0;
     xcb_atom_t m_netWMStateMaxHorzAtom = 0;
